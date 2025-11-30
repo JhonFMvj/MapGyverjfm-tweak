@@ -83,7 +83,6 @@ private:
     // OpenGL resources
     GLuint vbo;
     GLuint ebo;
-    GLuint vao;
     bool glInitialized;
 
     // Rendering settings

@@ -124,6 +124,13 @@ void MeshControlPoint::fromJSON(const var& data)
 // MeshGrid Implementation
 //==============================================================================
 
+// Epsilon value for floating-point comparisons
+static constexpr float MESH_EPSILON = 0.0001f;
+
+// Maximum grid dimension supported for hash key generation
+// Grid positions are encoded as: row * MAX_GRID_DIM + col
+static constexpr int MAX_GRID_DIM = 1000;
+
 MeshGrid::MeshGrid()
     : subdivisions(2)
     , bounds(0, 0, 1, 1)
@@ -461,7 +468,7 @@ void MeshGrid::rebuildGrid()
     {
         if (p->gridRow >= 0 && p->gridCol >= 0)
         {
-            int key = p->gridRow * 1000 + p->gridCol;
+            int key = p->gridRow * MAX_GRID_DIM + p->gridCol;
             oldPositions.set(key, p->position);
         }
     }
@@ -487,7 +494,7 @@ void MeshGrid::rebuildGrid()
             point->gridCol = col;
             
             // Restore old position if it was the same grid position
-            int key = row * 1000 + col;
+            int key = row * MAX_GRID_DIM + col;
             if (oldPositions.contains(key))
             {
                 point->position = oldPositions[key];
@@ -577,7 +584,7 @@ Point<float> MeshGrid::perspectiveInterpolate(Point<float> pos) const
     Point<float> center;
     float d = (p1.x - p3.x) * (p2.y - p4.y) - (p1.y - p3.y) * (p2.x - p4.x);
     
-    if (std::abs(d) < 0.0001f)
+    if (std::abs(d) < MESH_EPSILON)
     {
         // No perspective correction needed, fall back to bilinear
         return bilinearInterpolate(pos);
@@ -606,7 +613,7 @@ Point<float> MeshGrid::perspectiveInterpolate(Point<float> pos) const
     
     float wSum = w1 + w2 + w3 + w4;
     
-    if (wSum < 0.0001f) return bilinearInterpolate(pos);
+    if (wSum < MESH_EPSILON) return bilinearInterpolate(pos);
     
     return (tl->uv * w1 + tr->uv * w2 + br->uv * w3 + bl->uv * w4) / wSum;
 }

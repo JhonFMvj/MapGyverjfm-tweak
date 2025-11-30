@@ -95,24 +95,28 @@ void CompositionMedia::renderGLInternal()
 			float alpha = l->alpha->floatValue();
 
 			// Check if mesh warping is enabled for this layer
-			if (l->isMeshEnabled() && l->getMeshWarper() != nullptr)
+			if (l->isMeshEnabled())
 			{
-				// Render with mesh warping
-				glPushMatrix();
-				glTranslatef(x, y, 0.0f);
-				glScalef(width, height, 1.0f);
-				
-				// Apply rotation around center
-				glTranslatef(0.5f, 0.5f, 0.0f);
-				glRotatef(rotationAngle, 0.0f, 0.0f, 1.0f);
-				glTranslatef(-0.5f, -0.5f, 0.0f);
-				
-				glColor4f(1.0f, 1.0f, 1.0f, alpha);
-				
-				// Render the warped mesh
-				l->getMeshWarper()->render(m->getTextureID(), width, height);
-				
-				juce::gl::glPopMatrix();
+				MeshWarper* warper = l->getMeshWarper();
+				if (warper != nullptr)
+				{
+					// Render with mesh warping
+					glPushMatrix();
+					glTranslatef(x, y, 0.0f);
+					glScalef(width, height, 1.0f);
+					
+					// Apply rotation around center
+					glTranslatef(0.5f, 0.5f, 0.0f);
+					glRotatef(rotationAngle, 0.0f, 0.0f, 1.0f);
+					glTranslatef(-0.5f, -0.5f, 0.0f);
+					
+					glColor4f(1.0f, 1.0f, 1.0f, alpha);
+					
+					// Render the warped mesh
+					warper->render(m->getTextureID(), width, height);
+					
+					juce::gl::glPopMatrix();
+				}
 			}
 			else
 			{
