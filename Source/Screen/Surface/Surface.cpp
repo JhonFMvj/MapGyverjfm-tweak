@@ -23,10 +23,12 @@ Surface::Surface(var params) :
 	adjustmentsCC("Adjustments"),
 	formatCC("Aspect Ratio"),
 	pinsCC("Pins"),
+	meshCC("Mesh Warping"),
 	objectType(params.getProperty("type", "Surface").toString()),
 	objectData(params),
 	previewMedia(nullptr),
-	shouldUpdateVertices(true)
+	shouldUpdateVertices(true),
+	meshNeedsUpdate(false)
 
 {
 	saveAndLoadRecursiveData = true;
@@ -177,6 +179,32 @@ Surface::Surface(var params) :
 	addChildControllableContainer(&formatCC);
 	addChildControllableContainer(&pinsCC);
 
+	// Mesh Warping Controls
+	meshEnabled = meshCC.addBoolParameter("Enable Mesh", "Enable mesh warping for this surface", false);
+	meshVisible = meshCC.addBoolParameter("Show Grid", "Show the mesh grid overlay", true);
+	meshLocked = meshCC.addBoolParameter("Lock Mesh", "Lock the mesh to prevent accidental changes", false);
+	
+	meshSubdivisions = meshCC.addIntParameter("Subdivisions", "Number of mesh subdivisions (creates (n+1)x(n+1) control points)", 2, 1, 20);
+	
+	meshWarpMode = meshCC.addEnumParameter("Warp Mode", "Warping interpolation algorithm");
+	meshWarpMode->addOption("Bilinear", (int)MeshWarpMode::Bilinear)
+		->addOption("Perspective", (int)MeshWarpMode::Perspective)
+		->addOption("Bezier", (int)MeshWarpMode::Bezier);
+	
+	meshReset = meshCC.addTrigger("Reset Mesh", "Reset mesh to default 2x2 configuration");
+	meshAddSubdivision = meshCC.addTrigger("+", "Add subdivision (increase grid resolution)");
+	meshRemoveSubdivision = meshCC.addTrigger("-", "Remove subdivision (decrease grid resolution)");
+	meshAddPoint = meshCC.addTrigger("Add Mesh Point", "Click on surface to add a manual control point");
+	
+	meshCC.editorIsCollapsed = true;
+	addChildControllableContainer(&meshCC);
+
+	// Initialize mesh grid and warper
+	meshGrid.reset(new MeshGrid());
+	meshWarper.reset(new MeshWarper());
+	meshWarper->setMeshGrid(meshGrid.get());
+	meshGrid->addListener(this);
+
 	if (!Engine::mainEngine->isLoadingFile)
 	{
 		if (!MediaManager::getInstance()->items.isEmpty()) media->setValueFromTarget(MediaManager::getInstance()->items.getFirst());
@@ -188,6 +216,8 @@ Surface::Surface(var params) :
 
 Surface::~Surface()
 {
+	if (meshGrid != nullptr)
+		meshGrid->removeListener(this);
 }
 
 void Surface::onContainerParameterChangedInternal(Parameter* p)
@@ -221,6 +251,49 @@ void Surface::onContainerParameterChangedInternal(Parameter* p)
 		cropRight->setEnabled(e);
 		cropBottom->setEnabled(e);
 		cropLeft->setEnabled(e);
+	}
+	else if (p == meshEnabled)
+	{
+		if (meshGrid != nullptr)
+			meshGrid->setEditMode(meshEnabled->boolValue());
+		shouldUpdateVertices = true;
+	}
+	else if (p == meshVisible)
+	{
+		if (meshGrid != nullptr)
+			meshGrid->setGridVisible(meshVisible->boolValue());
+	}
+	else if (p == meshLocked)
+	{
+		if (meshGrid != nullptr)
+			meshGrid->setLocked(meshLocked->boolValue());
+	}
+	else if (p == meshSubdivisions)
+	{
+		if (meshGrid != nullptr)
+		{
+			int current = meshGrid->getSubdivisions();
+			int target = meshSubdivisions->intValue();
+			while (current < target)
+			{
+				meshGrid->addSubdivision();
+				current++;
+			}
+			while (current > target)
+			{
+				meshGrid->removeSubdivision();
+				current--;
+			}
+		}
+	}
+	else if (p == meshWarpMode)
+	{
+		if (meshGrid != nullptr)
+		{
+			meshGrid->setWarpMode((MeshWarpMode)meshWarpMode->getValueData());
+			meshNeedsUpdate = true;
+			shouldUpdateVertices = true;
+		}
 	}
 }
 
@@ -979,4 +1052,85 @@ bool Surface::isPointInsideCircumcircle(juce::Point<float> point, juce::Point<fl
 
 	// Comparaison des distances au carré
 	return center.getDistanceFrom(point) < center.getDistanceFrom(vertex1);
+}
+
+void Surface::onContainerTriggerTriggered(Trigger* t)
+{
+	if (t == meshReset)
+	{
+		if (meshGrid != nullptr)
+		{
+			meshGrid->resetToDefault();
+			meshSubdivisions->setValue(2);
+		}
+	}
+	else if (t == meshAddSubdivision)
+	{
+		if (meshGrid != nullptr && !meshGrid->getLocked())
+		{
+			meshGrid->addSubdivision();
+			meshSubdivisions->setValue(meshGrid->getSubdivisions());
+		}
+	}
+	else if (t == meshRemoveSubdivision)
+	{
+		if (meshGrid != nullptr && !meshGrid->getLocked())
+		{
+			meshGrid->removeSubdivision();
+			meshSubdivisions->setValue(meshGrid->getSubdivisions());
+		}
+	}
+	else if (t == meshAddPoint)
+	{
+		// This would trigger a UI mode for adding points
+		LOG("Click on the surface to add a mesh control point");
+	}
+}
+
+void Surface::meshGridChanged(MeshGrid* grid)
+{
+	meshNeedsUpdate = true;
+	shouldUpdateVertices = true;
+	// Update the subdivisions parameter to reflect the grid state
+	if (grid != nullptr && meshSubdivisions->intValue() != grid->getSubdivisions())
+	{
+		meshSubdivisions->setValue(grid->getSubdivisions());
+	}
+}
+
+void Surface::meshPointMoved(MeshGrid* grid, MeshControlPoint* point)
+{
+	meshNeedsUpdate = true;
+	shouldUpdateVertices = true;
+}
+
+void Surface::meshSelectionChanged(MeshGrid* grid)
+{
+	// Selection change might trigger UI update but doesn't need mesh rebuild
+}
+
+var Surface::getJSONData()
+{
+	var data = BaseItem::getJSONData();
+	
+	// Save mesh data
+	if (meshGrid != nullptr)
+	{
+		data.getDynamicObject()->setProperty("meshData", meshGrid->toJSON());
+	}
+	
+	return data;
+}
+
+void Surface::loadJSONDataItemInternal(var data)
+{
+	// Load mesh data
+	if (data.hasProperty("meshData") && meshGrid != nullptr)
+	{
+		meshGrid->fromJSON(data["meshData"]);
+		meshSubdivisions->setValue(meshGrid->getSubdivisions());
+		meshWarpMode->setValueWithData((int)meshGrid->getWarpMode());
+		meshVisible->setValue(meshGrid->isGridVisible());
+		meshLocked->setValue(meshGrid->getLocked());
+	}
 }

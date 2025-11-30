@@ -36,3 +36,7 @@
 #include "MediaTarget.h"
 
 #include "ContentExplorer/OnlineContentExplorer.h"
+
+// Mesh warping system
+#include "Mesh/MeshGrid.h"
+#include "Mesh/MeshWarper.h"
