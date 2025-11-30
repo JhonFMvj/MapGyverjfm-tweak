@@ -15,7 +15,9 @@
 
 CompositionLayer::CompositionLayer(const String& name, var params) :
 	BaseItem(name),
-	media(nullptr)
+	media(nullptr),
+	meshCC("Mesh Warping"),
+	meshNeedsUpdate(false)
 {
 	saveAndLoadRecursiveData = true;
 	canBeDisabled = true;
@@ -76,12 +78,37 @@ CompositionLayer::CompositionLayer(const String& name, var params) :
 	blendFunctionSourceFactor->setControllableFeedbackOnly(true);
 	blendFunctionDestinationFactor->setControllableFeedbackOnly(true);
 
+	// Mesh Warping Controls
+	meshEnabled = meshCC.addBoolParameter("Enable Mesh", "Enable mesh warping for this layer", false);
+	meshVisible = meshCC.addBoolParameter("Show Grid", "Show the mesh grid overlay", true);
+	meshLocked = meshCC.addBoolParameter("Lock Mesh", "Lock the mesh to prevent accidental changes", false);
+	
+	meshSubdivisions = meshCC.addIntParameter("Subdivisions", "Number of mesh subdivisions (creates (n+1)x(n+1) control points)", 2, 1, 20);
+	
+	meshWarpMode = meshCC.addEnumParameter("Warp Mode", "Warping interpolation algorithm");
+	meshWarpMode->addOption("Bilinear", (int)MeshWarpMode::Bilinear)
+		->addOption("Perspective", (int)MeshWarpMode::Perspective)
+		->addOption("Bezier", (int)MeshWarpMode::Bezier);
+	
+	meshReset = meshCC.addTrigger("Reset Mesh", "Reset mesh to default 2x2 configuration");
+	meshAddSubdivision = meshCC.addTrigger("+", "Add subdivision (increase grid resolution)");
+	meshRemoveSubdivision = meshCC.addTrigger("-", "Remove subdivision (decrease grid resolution)");
+	meshAddPoint = meshCC.addTrigger("Add Mesh Point", "Click on layer to add a manual control point");
+	
+	meshCC.editorIsCollapsed = true;
+	addChildControllableContainer(&meshCC);
 
-
+	// Initialize mesh grid and warper
+	meshGrid.reset(new MeshGrid());
+	meshWarper.reset(new MeshWarper());
+	meshWarper->setMeshGrid(meshGrid.get());
+	meshGrid->addListener(this);
 }
 
 CompositionLayer::~CompositionLayer()
 {
+	if (meshGrid != nullptr)
+		meshGrid->removeListener(this);
 }
 
 void CompositionLayer::onContainerParameterChangedInternal(Parameter* p)
@@ -162,6 +189,47 @@ void CompositionLayer::onContainerParameterChangedInternal(Parameter* p)
 			}
 		}
 	}
+	else if (p == meshEnabled)
+	{
+		if (meshGrid != nullptr)
+			meshGrid->setEditMode(meshEnabled->boolValue());
+	}
+	else if (p == meshVisible)
+	{
+		if (meshGrid != nullptr)
+			meshGrid->setGridVisible(meshVisible->boolValue());
+	}
+	else if (p == meshLocked)
+	{
+		if (meshGrid != nullptr)
+			meshGrid->setLocked(meshLocked->boolValue());
+	}
+	else if (p == meshSubdivisions)
+	{
+		if (meshGrid != nullptr)
+		{
+			int current = meshGrid->getSubdivisions();
+			int target = meshSubdivisions->intValue();
+			while (current < target)
+			{
+				meshGrid->addSubdivision();
+				current++;
+			}
+			while (current > target)
+			{
+				meshGrid->removeSubdivision();
+				current--;
+			}
+		}
+	}
+	else if (p == meshWarpMode)
+	{
+		if (meshGrid != nullptr)
+		{
+			meshGrid->setWarpMode((MeshWarpMode)meshWarpMode->getValueData());
+			meshNeedsUpdate = true;
+		}
+	}
 }
 
 void CompositionLayer::onControllableFeedbackUpdateInternal(ControllableContainer* cc, Controllable* c)
@@ -169,6 +237,40 @@ void CompositionLayer::onControllableFeedbackUpdateInternal(ControllableContaine
 	if (media != nullptr && (c == media->width || c == media->height))
 	{
 		//size->setPoint(media->getMediaSize().toFloat());
+	}
+}
+
+void CompositionLayer::onContainerTriggerTriggered(Trigger* t)
+{
+	if (t == meshReset)
+	{
+		if (meshGrid != nullptr)
+		{
+			meshGrid->resetToDefault();
+			meshSubdivisions->setValue(2);
+		}
+	}
+	else if (t == meshAddSubdivision)
+	{
+		if (meshGrid != nullptr && !meshGrid->getLocked())
+		{
+			meshGrid->addSubdivision();
+			meshSubdivisions->setValue(meshGrid->getSubdivisions());
+		}
+	}
+	else if (t == meshRemoveSubdivision)
+	{
+		if (meshGrid != nullptr && !meshGrid->getLocked())
+		{
+			meshGrid->removeSubdivision();
+			meshSubdivisions->setValue(meshGrid->getSubdivisions());
+		}
+	}
+	else if (t == meshAddPoint)
+	{
+		// This would trigger a UI mode for adding points
+		// The actual point addition happens through UI interaction
+		LOG("Click on the layer to add a mesh control point");
 	}
 }
 
@@ -195,6 +297,52 @@ bool CompositionLayer::isUsingMedia(Media* m)
 {
 	if (!enabled->boolValue()) return false;
 	return MediaTarget::isUsingMedia(m);
+}
+
+void CompositionLayer::meshGridChanged(MeshGrid* grid)
+{
+	meshNeedsUpdate = true;
+	// Update the subdivisions parameter to reflect the grid state
+	if (grid != nullptr && meshSubdivisions->intValue() != grid->getSubdivisions())
+	{
+		meshSubdivisions->setValue(grid->getSubdivisions());
+	}
+}
+
+void CompositionLayer::meshPointMoved(MeshGrid* grid, MeshControlPoint* point)
+{
+	meshNeedsUpdate = true;
+}
+
+void CompositionLayer::meshSelectionChanged(MeshGrid* grid)
+{
+	// Selection change might trigger UI update but doesn't need mesh rebuild
+}
+
+var CompositionLayer::getJSONData()
+{
+	var data = BaseItem::getJSONData();
+	
+	// Save mesh data
+	if (meshGrid != nullptr)
+	{
+		data.getDynamicObject()->setProperty("meshData", meshGrid->toJSON());
+	}
+	
+	return data;
+}
+
+void CompositionLayer::loadJSONDataItemInternal(var data)
+{
+	// Load mesh data
+	if (data.hasProperty("meshData") && meshGrid != nullptr)
+	{
+		meshGrid->fromJSON(data["meshData"]);
+		meshSubdivisions->setValue(meshGrid->getSubdivisions());
+		meshWarpMode->setValueWithData((int)meshGrid->getWarpMode());
+		meshVisible->setValue(meshGrid->isGridVisible());
+		meshLocked->setValue(meshGrid->getLocked());
+	}
 }
 
 ReferenceCompositionLayer::ReferenceCompositionLayer(var params) :

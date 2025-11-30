@@ -13,7 +13,8 @@
 
 class CompositionLayer :
 	public BaseItem,
-	public MediaTarget
+	public MediaTarget,
+	public MeshGrid::Listener
 {
 public:
 	CompositionLayer(const String& name = "Layer", var params = var());
@@ -35,12 +36,44 @@ public:
 	EnumParameter* blendFunctionSourceFactor;
 	EnumParameter* blendFunctionDestinationFactor;
 
+	// Mesh Warping
+	ControllableContainer meshCC;
+	BoolParameter* meshEnabled;
+	BoolParameter* meshVisible;
+	BoolParameter* meshLocked;
+	IntParameter* meshSubdivisions;
+	EnumParameter* meshWarpMode;
+	Trigger* meshReset;
+	Trigger* meshAddPoint;
+	Trigger* meshAddSubdivision;
+	Trigger* meshRemoveSubdivision;
+	
+	std::unique_ptr<MeshGrid> meshGrid;
+	std::unique_ptr<MeshWarper> meshWarper;
+	bool meshNeedsUpdate;
+
 	virtual void onContainerParameterChangedInternal(Parameter* p);
 	virtual void onControllableFeedbackUpdateInternal(ControllableContainer* cc, Controllable* c) override;
+	virtual void onContainerTriggerTriggered(Trigger* t) override;
 
 	virtual void setMedia(Media* m);
 
 	bool isUsingMedia(Media* m) override;
+
+	// Mesh Grid Listener
+	void meshGridChanged(MeshGrid* grid) override;
+	void meshPointMoved(MeshGrid* grid, MeshControlPoint* point) override;
+	void meshSelectionChanged(MeshGrid* grid) override;
+
+	// Serialization
+	var getJSONData() override;
+	void loadJSONDataItemInternal(var data) override;
+
+	// Mesh access
+	MeshGrid* getMeshGrid() { return meshGrid.get(); }
+	MeshWarper* getMeshWarper() { return meshWarper.get(); }
+	bool isMeshEnabled() const { return meshEnabled->boolValue(); }
+	bool isMeshVisible() const { return meshVisible->boolValue(); }
 };
 
 class ReferenceCompositionLayer : public CompositionLayer

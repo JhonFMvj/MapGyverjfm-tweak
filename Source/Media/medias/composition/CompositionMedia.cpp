@@ -94,27 +94,55 @@ void CompositionMedia::renderGLInternal()
 			// Niveau de transparence (0.0 pour complètement transparent, 1.0 pour complètement opaque)
 			float alpha = l->alpha->floatValue();
 
-			// Active la texture
-			glBindTexture(GL_TEXTURE_2D, m->getTextureID());
-			// Applique la rotation et la transparence
-			glPushMatrix();
-			glTranslatef(x + width / 2.0f, y + height / 2.0f, 0.0f);
-			glRotatef(rotationAngle, 0.0f, 0.0f, 1.0f);
-			glTranslatef(-width / 2.0f, -height / 2.0f, 0.0f);
+			// Check if mesh warping is enabled for this layer
+			if (l->isMeshEnabled())
+			{
+				MeshWarper* warper = l->getMeshWarper();
+				if (warper != nullptr)
+				{
+					// Render with mesh warping
+					glPushMatrix();
+					glTranslatef(x, y, 0.0f);
+					glScalef(width, height, 1.0f);
+					
+					// Apply rotation around center
+					glTranslatef(0.5f, 0.5f, 0.0f);
+					glRotatef(rotationAngle, 0.0f, 0.0f, 1.0f);
+					glTranslatef(-0.5f, -0.5f, 0.0f);
+					
+					glColor4f(1.0f, 1.0f, 1.0f, alpha);
+					
+					// Render the warped mesh
+					warper->render(m->getTextureID(), width, height);
+					
+					juce::gl::glPopMatrix();
+				}
+			}
+			else
+			{
+				// Standard rendering without mesh warping
+				// Active la texture
+				glBindTexture(GL_TEXTURE_2D, m->getTextureID());
+				// Applique la rotation et la transparence
+				glPushMatrix();
+				glTranslatef(x + width / 2.0f, y + height / 2.0f, 0.0f);
+				glRotatef(rotationAngle, 0.0f, 0.0f, 1.0f);
+				glTranslatef(-width / 2.0f, -height / 2.0f, 0.0f);
 
-			float yA = y;
-			float yB = y + height;
+				float yA = y;
+				float yB = y + height;
 
-			// Dessine le rectangle avec la texture
-			glColor4f(1.0f, 1.0f, 1.0f, alpha);
-			glBegin(GL_QUADS);
-			glTexCoord2f(0.0f, 0.0f); glVertex2f(x, yB);
-			glTexCoord2f(1.0f, 0.0f); glVertex2f(x + width, yB);
-			glTexCoord2f(1.0f, 1.0f); glVertex2f(x + width, yA);
-			glTexCoord2f(0.0f, 1.0f); glVertex2f(x, yA);
-			glEnd();
-			glBindTexture(GL_TEXTURE_2D, 0);
-			juce::gl::glPopMatrix();
+				// Dessine le rectangle avec la texture
+				glColor4f(1.0f, 1.0f, 1.0f, alpha);
+				glBegin(GL_QUADS);
+				glTexCoord2f(0.0f, 0.0f); glVertex2f(x, yB);
+				glTexCoord2f(1.0f, 0.0f); glVertex2f(x + width, yB);
+				glTexCoord2f(1.0f, 1.0f); glVertex2f(x + width, yA);
+				glTexCoord2f(0.0f, 1.0f); glVertex2f(x, yA);
+				glEnd();
+				glBindTexture(GL_TEXTURE_2D, 0);
+				juce::gl::glPopMatrix();
+			}
 		}
 
 		// Restaure la matrice de modèle-vue

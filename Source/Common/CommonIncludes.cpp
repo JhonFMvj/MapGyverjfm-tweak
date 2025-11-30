@@ -21,3 +21,7 @@
 #include "MediaTarget.cpp"
 
 #include "ContentExplorer/OnlineContentExplorer.cpp"
+
+// Mesh warping system
+#include "Mesh/MeshGrid.cpp"
+#include "Mesh/MeshWarper.cpp"

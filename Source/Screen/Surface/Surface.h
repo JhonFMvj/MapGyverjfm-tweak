@@ -15,7 +15,8 @@ class Media;
 
 class Surface :
 	public BaseItem,
-	public MediaTarget
+	public MediaTarget,
+	public MeshGrid::Listener
 {
 public:
 	Surface(var params = var());
@@ -84,6 +85,22 @@ public:
 	FloatParameter* cropBottom;
 	FloatParameter* cropLeft;
 
+	// Mesh Warping
+	ControllableContainer meshCC;
+	BoolParameter* meshEnabled;
+	BoolParameter* meshVisible;
+	BoolParameter* meshLocked;
+	IntParameter* meshSubdivisions;
+	EnumParameter* meshWarpMode;
+	Trigger* meshReset;
+	Trigger* meshAddPoint;
+	Trigger* meshAddSubdivision;
+	Trigger* meshRemoveSubdivision;
+	
+	std::unique_ptr<MeshGrid> meshGrid;
+	std::unique_ptr<MeshWarper> meshWarper;
+	bool meshNeedsUpdate;
+
 	Media* previewMedia;
 	Path quadPath;
 
@@ -102,6 +119,7 @@ public:
 
 	void onContainerParameterChangedInternal(Parameter* p);
 	void onControllableFeedbackUpdateInternal(ControllableContainer* cc, Controllable* c) override;
+	void onContainerTriggerTriggered(Trigger* t) override;
 
 	void updatePath();
 
@@ -128,6 +146,21 @@ public:
 	Array<Point2DParameter*> getCornerHandles();
 	Array<Point2DParameter*> getAllHandles();
 	Array<Point2DParameter*> getBezierHandles(Point2DParameter* corner = nullptr);
+
+	// Mesh Grid Listener
+	void meshGridChanged(MeshGrid* grid) override;
+	void meshPointMoved(MeshGrid* grid, MeshControlPoint* point) override;
+	void meshSelectionChanged(MeshGrid* grid) override;
+
+	// Serialization
+	var getJSONData() override;
+	void loadJSONDataItemInternal(var data) override;
+
+	// Mesh access
+	MeshGrid* getMeshGrid() { return meshGrid.get(); }
+	MeshWarper* getMeshWarper() { return meshWarper.get(); }
+	bool isMeshEnabled() const { return meshEnabled->boolValue(); }
+	bool isMeshVisible() const { return meshVisible->boolValue(); }
 
 	String getTypeString() const override { return objectType; }
 	static Surface* create(var params) { return new Surface(params); }

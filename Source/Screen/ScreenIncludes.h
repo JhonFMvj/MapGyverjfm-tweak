@@ -11,6 +11,7 @@
 #pragma once
 
 #include "JuceHeader.h"
+#include "Common/CommonIncludes.h"
 
 #include "Surface/Pin.h"
 
